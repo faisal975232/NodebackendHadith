@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%- mf %></title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+    }
+    .container {
+      margin: 50px auto;
+      max-width: 800px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f2f2f2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1><%- mf %></h1>
+    <div id="holdings-table-plus"></div> <!-- Table for positive market change -->
+    <div id="holdings-table-minus"></div> <!-- Table for negative market change -->
+    <div id="sum-table"></div> <!-- Table for sum of market change and percent -->
+  </div>
+
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script>
+    $(document).ready(function() {
+      const holdings = <%- JSON.stringify(holdings) %>;
+      const plusTable = $('<table>').appendTo('#holdings-table-plus'); // Append the table for positive market change
+      const minusTable = $('<table>').appendTo('#holdings-table-minus'); // Append the table for negative market change
+      const sumTable = $('<table>').appendTo('#sum-table'); // Append the table for sum
+
+      // Create headers for positive market change table
+      createTableHeader(plusTable, ['Company Name', 'Symbol', 'Quantity', 'Price', 'Market Change', 'Market Change Percent']);
+
+      // Create headers for negative market change table
+      createTableHeader(minusTable, ['Company Name', 'Symbol', 'Quantity', 'Price', 'Market Change', 'Market Change Percent']);
+
+      // Create headers for sum table
+      createTableHeader(sumTable, ['Total Market Change Price', 'Total Market Change Percent']);
+
+      const positiveRows = [];
+      const negativeRows = [];
+      let totalMarketChangePrice = 0;
+      let totalMarketChangePercent = 0;
+
+      holdings.forEach(function(holding, index) {
+        setTimeout(function() {
+          $.ajax({
+            url: '/api/holding/' + holding.symbol,
+            method: 'GET',
+            success: function(data) {
+              // Calculate total market change and percent
+              totalMarketChangePrice += data.marketChange;
+              totalMarketChangePercent += data.marketChangePercent;
+
+              // Decide which table to populate based on market change
+              if (data.marketChange > 0) {
+                populateRow(positiveRows, plusTable, holding, data);
+              } else if (data.marketChange < 0) {
+                populateRow(negativeRows, minusTable, holding, data);
+              }
+              
+              // Update sum table after all data is fetched
+              if (index === holdings.length - 1) {
+                $('<tr>').append($('<td>').text(totalMarketChangePrice.toFixed(2))).append($('<td>').text(totalMarketChangePercent.toFixed(2) + '%')).appendTo(sumTable);
+              }
+            },
+            error: function(error) {
+              console.error('Error fetching data for ' + holding.symbol, error);
+              // Create a row with error messages if fetching fails
+              populateRow(negativeRows, minusTable, holding, { price: 'Error', marketChange: 'Error', marketChangePercent: 'Error' });
+            }
+          });
+        }, index * 100); // Delay 0.1 seconds (100 milliseconds)
+      });
+
+      // Function to create table headers
+      function createTableHeader(table, headers) {
+        const headerRow = $('<thead>').appendTo(table).append('<tr>');
+        headers.forEach(header => $('<th>').text(header).appendTo(headerRow));
+      }
+
+      // Function to populate rows in the tables
+      function populateRow(rowsArray, table, holding, data) {
+        const row = $('<tr>').appendTo(table);
+        $('<td>').text(holding.companyName).appendTo(row);
+        $('<td>').text(holding.symbol).appendTo(row);
+        $('<td>').text(holding.quantity).appendTo(row);
+        $('<td>').text(data.price).appendTo(row);
+        $('<td>').text(data.marketChange).appendTo(row);
+        $('<td>').text(data.marketChangePercent.toFixed(2) + '%').appendTo(row);
+        rowsArray.push(row);
+      }
+    });
+  </script>
+</body>
+</html>
