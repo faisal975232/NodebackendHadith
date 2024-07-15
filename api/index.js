@@ -3,6 +3,45 @@ const yahooFinance = require('yahoo-finance2').default;
 const axios = require('axios');
 const cheerio = require('cheerio');
 const path = require('path');
+const nodemailer = require('nodemailer');
+const mongoose = require('mongoose');
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect("mongodb+srv://faisal:Fmusa975232@cluster0.v8kqp.mongodb.net/TaskManager?retryWrites=true&w=majority");
+    console.log('MongoDB connected successfully');
+  } catch (error) {
+    console.error('Error connecting to MongoDB:', error.message);
+    process.exit(1); // Exit process with failure
+  }
+};
+
+connectDB();
+
+// Define a schema and model for the mutual_fund_nav collection
+const mutualFundNavSchema = new mongoose.Schema({
+  date: { type: String, required: true, unique: true },
+  nav: { type: String, required: true }
+});
+
+const MutualFundNav = mongoose.model('mutual_fund_nav', mutualFundNavSchema);
+
+
+// Schema for Tata Ethical Fund
+const tataFundNavSchema = new mongoose.Schema({
+  date: { type: String, required: true, unique: true },
+  nav: { type: String, required: true }
+});
+const TataFundNav = mongoose.model('TataFundNav', tataFundNavSchema);
+
+
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: 'king975232@gmail.com',
+    pass: 'ametkwrdyyqjoosp '
+  }
+});
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -219,6 +258,100 @@ app.get('/api/holding/:symbol', async (req, res) => {
     res.status(500).json({ error: 'Error fetching data' });
   }
 });
+
+
+app.get('/cronjob', async (req, res) => {
+  const urls = {
+    taurus: 'https://api.mfapi.in/mf/111787/latest',
+    tata: 'https://api.mfapi.in/mf/119172/latest'
+  };
+
+  try {
+    // Fetch data for both funds
+    const [taurusResponse, tataResponse] = await Promise.all([
+      axios.get(urls.taurus),
+      axios.get(urls.tata)
+    ]);
+
+    const today = new Date();
+    const todayStr = `${today.getDate().toString().padStart(2, '0')}-${(today.getMonth() + 1).toString().padStart(2, '0')}-${today.getFullYear()}`;
+
+    // Check Taurus Mutual Fund
+    if (taurusResponse.data.status === 'SUCCESS' && taurusResponse.data.data && taurusResponse.data.data.length > 0) {
+      const navDate = taurusResponse.data.data[0].date;
+
+      if (navDate === todayStr) {
+        const existingRecord = await MutualFundNav.findOne({ date: todayStr });
+
+        if (!existingRecord) {
+          const mailOptions = {
+            from: 'king975232@gmail.com',
+            to: 'king975232@gmail.com',
+            subject: 'Taurus Mutual Fund NAV Updated',
+            text: `The NAV data has been updated for today (${todayStr}). The new NAV is ${taurusResponse.data.data[0].nav}.`
+          };
+
+          await transporter.sendMail(mailOptions);
+
+          const newRecord = new MutualFundNav({
+            date: todayStr,
+            nav: taurusResponse.data.data[0].nav
+          });
+
+          await newRecord.save();
+          console.log('Taurus email sent successfully');
+        } else {
+          console.log('Taurus email already sent for today');
+        }
+      } else {
+        console.log('Taurus NAV data is not updated for today');
+      }
+    } else {
+      console.log('Failed to fetch Taurus NAV data');
+    }
+
+    // Check Tata Ethical Fund
+    if (tataResponse.data.status === 'SUCCESS' && tataResponse.data.data && tataResponse.data.data.length > 0) {
+      const navDate = tataResponse.data.data[0].date;
+
+      if (navDate === todayStr) {
+        const existingRecord = await TataFundNav.findOne({ date: todayStr });
+
+        if (!existingRecord) {
+          const mailOptions = {
+            from: 'king975232@gmail.com',
+            to: 'king975232@gmail.com',
+            subject: 'Tata Ethical Fund NAV Updated',
+            text: `The NAV data has been updated for today (${todayStr}). The new NAV is ${tataResponse.data.data[0].nav}.`
+          };
+
+          await transporter.sendMail(mailOptions);
+
+          const newRecord = new TataFundNav({
+            date: todayStr,
+            nav: tataResponse.data.data[0].nav
+          });
+
+          await newRecord.save();
+          console.log('Tata email sent successfully');
+        } else {
+          console.log('Tata email already sent for today');
+        }
+      } else {
+        console.log('Tata NAV data is not updated for today');
+      }
+    } else {
+      console.log('Failed to fetch Tata NAV data');
+    }
+
+    return res.status(200).send('Cron job executed successfully');
+  } catch (error) {
+    console.error('Error checking NAV data:', error);
+    return res.status(500).send('Error checking NAV data');
+  }
+});
+
+
 
 
 app.listen(PORT, () => {
